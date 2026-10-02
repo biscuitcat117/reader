@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Reader</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Reader">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<main id="library">
+  <header>
+    <h1>Library</h1>
+    <div class="actions">
+      <button id="btn-settings">Settings</button>
+      <button id="btn-add" class="primary">Add Book</button>
+    </div>
+  </header>
+  <div id="book-grid"></div>
+  <div id="empty" hidden>
+    <h2>No books yet</h2>
+    <p>Tap <strong>Add Book</strong> to choose an EPUB from Files.</p>
+    <button id="btn-sample">Add the sample guide</button>
+  </div>
+</main>
+
+<main id="reader" hidden>
+  <iframe id="page" title="Book page"></iframe>
+
+  <header class="chrome" id="reader-top">
+    <button id="btn-back">‹ Library</button>
+    <div id="reader-title"></div>
+    <div class="actions">
+      <button id="btn-toc" aria-label="Contents">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 6h2M9 6h11M4 12h2M9 12h11M4 18h2M9 18h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+      </button>
+      <button id="btn-aa" aria-label="Appearance"><span class="aa-small">A</span><span class="aa-big">A</span></button>
+    </div>
+  </header>
+
+  <footer class="chrome" id="reader-bottom">
+    <input id="scrubber" type="range" min="0" max="1000" value="0" aria-label="Position in book">
+  </footer>
+
+  <div id="page-info"><span id="chapter-pages"></span><span id="book-percent"></span></div>
+
+  <aside id="toc-panel" class="panel" hidden>
+    <div class="tabs">
+      <button data-tab="toc" aria-pressed="true">Contents</button>
+      <button data-tab="hl" aria-pressed="false">Highlights</button>
+    </div>
+    <ol id="toc-list"></ol>
+    <ol id="hl-list" hidden></ol>
+    <p class="empty" hidden></p>
+  </aside>
+
+  <div id="aa-panel" class="panel" hidden>
+    <div class="row sizes">
+      <button id="aa-smaller" aria-label="Smaller text">A</button>
+      <span id="aa-size">100%</span>
+      <button id="aa-larger" aria-label="Larger text">A</button>
+    </div>
+    <div class="row themes">
+      <button data-theme="white" aria-label="White"></button>
+      <button data-theme="sepia" aria-label="Sepia"></button>
+      <button data-theme="gray" aria-label="Gray"></button>
+      <button data-theme="night" aria-label="Night"></button>
+    </div>
+    <label class="row">Font
+      <select id="aa-font">
+        <option value="original">Original</option>
+        <option value="iowan">Iowan</option>
+        <option value="newyork">New York</option>
+        <option value="georgia">Georgia</option>
+        <option value="charter">Charter</option>
+        <option value="sans">San Francisco</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="sel-menu" hidden>
+    <button id="explain-btn">✦ Explain</button>
+    <button id="hl-btn">Highlight</button>
+  </div>
+
+  <aside id="ai-panel" hidden>
+    <header>
+      <strong>✦ Explain</strong>
+      <button id="ai-close" aria-label="Close">✕</button>
+    </header>
+    <blockquote id="ai-quote"></blockquote>
+    <div id="ai-thread"></div>
+    <form id="ai-form">
+      <input id="ai-input" placeholder="Ask a follow-up…" autocomplete="off" enterkeyhint="send">
+      <button aria-label="Send">↑</button>
+    </form>
+  </aside>
+</main>
+
+<dialog id="settings">
+  <form method="dialog">
+    <h2>Settings</h2>
+    <label>OpenRouter API key
+      <input id="set-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-or-…">
+    </label>
+    <p class="hint">Kept only on this device and sent only to OpenRouter. Create one at openrouter.ai/keys.</p>
+    <label>Model
+      <input id="set-model" list="model-list" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </label>
+    <datalist id="model-list"></datalist>
+    <label>Extra instructions (optional)
+      <textarea id="set-extra" rows="2" placeholder="e.g. Explain simply. Answer in Spanish."></textarea>
+    </label>
+    <menu>
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button value="save" class="primary">Save</button>
+    </menu>
+  </form>
+</dialog>
+
+<input id="file-input" type="file" accept=".epub,application/epub+zip" multiple hidden>
+<div id="toast" role="status" hidden></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
