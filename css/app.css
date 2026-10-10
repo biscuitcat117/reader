@@ -72,6 +72,58 @@ button.primary { background: var(--accent); color: #fff; font-weight: 600; }
 #library h1 { margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -.02em; }
 .actions { display: flex; align-items: center; gap: 6px; }
 
+#today { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; }
+#today circle { fill: none; stroke-width: 4.5; }
+#today .track { stroke: var(--surface); }
+#today .fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .4s; }
+#today .label { font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+#today-time { font-size: 24px; font-weight: 700; line-height: 1.2; }
+#today .sub { font-size: 13px; color: var(--muted); }
+
+#library h2 { margin: 0 0 14px; font-size: 22px; font-weight: 700; }
+#recent { margin-bottom: 34px; }
+
+#recent-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.recent-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--fg);
+  text-align: left;
+}
+
+.recent-card .thumb {
+  flex: none;
+  width: 58px;
+  aspect-ratio: 2 / 3;
+  border-radius: 3px;
+  overflow: hidden;
+  background: linear-gradient(160deg, #7a5c48, #4a3528);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+}
+
+.recent-card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.recent-card .info { flex: 1; min-width: 0; }
+.recent-card .title, .recent-card .author { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.recent-card .title { font-size: 15px; font-weight: 600; }
+.recent-card .author, .recent-card .status { font-size: 13px; color: var(--muted); }
+
+.recent-card .bar {
+  height: 4px;
+  margin: 9px 0 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--progress), var(--line) var(--progress));
+}
+
 #book-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -144,6 +196,12 @@ button.primary { background: var(--accent); color: #fff; font-weight: 600; }
   inset: 0;
   background: var(--page-bg);
   color: var(--ui-fg);
+}
+
+#reader.dismissing {
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .45);
 }
 
 #reader[data-ui="dark"] {
@@ -249,6 +307,7 @@ button.primary { background: var(--accent); color: #fff; font-weight: 600; }
   border-left: 3px solid rgba(255, 190, 0, .9);
   font-family: "Iowan Old Style", Georgia, serif;
 }
+#hl-list .note { display: block; margin-top: 6px; white-space: pre-wrap; }
 #hl-list .where { display: block; margin-top: 4px; font-size: 12px; opacity: .55; }
 #toc-panel ol { margin: 0; padding: 0 0 8px; list-style: none; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 #toc-panel li button {
@@ -339,6 +398,59 @@ button.primary { background: var(--accent); color: #fff; font-weight: 600; }
   box-shadow: 0 16px 50px rgba(0, 0, 0, .34), 0 0 0 1px var(--ui-line);
   -webkit-user-select: text;
   user-select: text;
+}
+
+#note-panel {
+  position: fixed;
+  z-index: 7;
+  /* Pinned to the top so the keyboard can never cover it, docked or floating. */
+  top: calc(env(safe-area-inset-top) + 12px);
+  right: max(16px, env(safe-area-inset-right));
+  width: min(440px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border-radius: 18px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, .34), 0 0 0 1px var(--ui-line);
+}
+
+#note-panel > header { display: flex; justify-content: space-between; align-items: center; padding: 10px 8px 6px 16px; }
+#note-done { font-weight: 600; }
+
+#note-quote {
+  margin: 0 16px 10px;
+  padding-left: 10px;
+  border-left: 3px solid rgba(255, 190, 0, .9);
+  font: italic 15px/1.4 "Iowan Old Style", Georgia, serif;
+  opacity: .8;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+#note-text {
+  height: 130px;
+  margin: 0 12px 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--ui-surface);
+  color: var(--ui-fg);
+  font-size: 16px;
+  line-height: 1.4;
+  resize: none;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* While typing a follow-up the panel moves to the top, clear of the keyboard. */
+#ai-panel.typing {
+  top: calc(env(safe-area-inset-top) + 12px);
+  bottom: auto;
+  max-height: min(42vh, 480px);
 }
 
 #ai-panel > header {
@@ -440,7 +552,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .4); }
 dialog h2 { margin: 0 0 16px; }
 dialog label { display: block; margin-top: 14px; font-size: 14px; font-weight: 600; }
 
-dialog input, dialog textarea {
+dialog input, dialog textarea, dialog select {
   display: block;
   width: 100%;
   margin-top: 6px;

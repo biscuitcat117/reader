@@ -23,15 +23,112 @@ function toast(message) {
   toastTimer = setTimeout(() => { el.hidden = true; }, 4000);
 }
 
+// ---- Reading time ----------------------------------------------------------
+
+// Seconds read per day, keyed by local date. Time counts while a book is open
+// and on screen, and pauses after five minutes without a touch or page turn.
+const IDLE_MS = 5 * 60 * 1000;
+const RING = 2 * Math.PI * 18;
+const dayKey = (date = new Date()) => date.toLocaleDateString('en-CA');
+const goalMinutes = () => Math.max(1, parseInt(localStorage.getItem('reader.goal'), 10) || 10);
+
+function readingLog() {
+  try { return JSON.parse(localStorage.getItem('reader.time') || '{}'); } catch { return {}; }
+}
+
+let lastActivity = 0;
+let lastTick = Date.now();
+const noteActivity = () => { lastActivity = Date.now(); };
+
+setInterval(() => {
+  const now = Date.now();
+  const elapsed = Math.min(now - lastTick, 10000);
+  lastTick = now;
+  if (!current || document.hidden || now - lastActivity > IDLE_MS) return;
+  const log = readingLog();
+  log[dayKey()] = (log[dayKey()] || 0) + elapsed / 1000;
+  const days = Object.keys(log).sort();
+  for (const old of days.slice(0, -400)) delete log[old];
+  localStorage.setItem('reader.time', JSON.stringify(log));
+}, 5000);
+
+function renderReadingTime() {
+  const log = readingLog();
+  const goal = goalMinutes();
+  const minutes = Math.floor((log[dayKey()] || 0) / 60);
+  const met = (date) => (log[dayKey(date)] || 0) >= goal * 60;
+
+  // Days in a row the goal was met; today only counts once it has been.
+  const day = new Date();
+  if (!met(day)) day.setDate(day.getDate() - 1);
+  let streak = 0;
+  while (met(day)) {
+    streak++;
+    day.setDate(day.getDate() - 1);
+  }
+
+  const hours = Math.floor(minutes / 60);
+  $('#today-time').textContent = hours ? `${hours} hr ${minutes % 60} min` : `${minutes} min`;
+  $('#today-goal').textContent = `of your ${goal} min goal${streak > 1 ? ` · ${streak}-day streak` : ''}`;
+  const ring = $('#today-ring');
+  ring.style.strokeDasharray = RING;
+  ring.style.strokeDashoffset = RING * (1 - Math.min(1, minutes / goal));
+}
+
 // ---- Library ---------------------------------------------------------------
 
 async function refreshLibrary() {
   books = await db.listBooks();
-  books.sort((a, b) => (b.opened || b.added) - (a.opened || a.added));
+  books.sort((a, b) => a.title.localeCompare(b.title));
   coverUrls.forEach((url) => URL.revokeObjectURL(url));
   coverUrls = [];
   grid.replaceChildren(...books.map(bookCard));
+  const recent = books.filter((b) => b.opened).sort((a, b) => b.opened - a.opened).slice(0, 4);
+  $('#recent-row').replaceChildren(...recent.map(recentCard));
+  $('#recent').hidden = recent.length === 0;
+  $('#all-heading').hidden = recent.length === 0;
   $('#empty').hidden = books.length > 0;
+  renderReadingTime();
+}
+
+function coverImage(meta) {
+  if (!meta.cover) return null;
+  const url = URL.createObjectURL(new Blob([meta.cover.data], { type: meta.cover.type }));
+  coverUrls.push(url);
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = '';
+  return img;
+}
+
+function recentCard(meta) {
+  const card = document.createElement('button');
+  card.className = 'recent-card';
+  const cover = document.createElement('div');
+  cover.className = 'thumb';
+  const img = coverImage(meta);
+  if (img) cover.append(img);
+
+  const info = document.createElement('div');
+  info.className = 'info';
+  const title = document.createElement('div');
+  title.className = 'title';
+  title.textContent = meta.title;
+  const author = document.createElement('div');
+  author.className = 'author';
+  author.textContent = meta.author;
+  const percent = Math.round((meta.progress || 0) * 100);
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  bar.style.setProperty('--progress', `${percent}%`);
+  const status = document.createElement('div');
+  status.className = 'status';
+  status.textContent = percent >= 100 ? 'Finished' : `${percent}%`;
+  info.append(title, author, bar, status);
+
+  card.append(cover, info);
+  card.addEventListener('click', () => openBook(meta.id));
+  return card;
 }
 
 function bookCard(meta) {
@@ -41,12 +138,8 @@ function bookCard(meta) {
   const open = document.createElement('button');
   open.className = 'cover';
   open.setAttribute('aria-label', `Open ${meta.title}`);
-  if (meta.cover) {
-    const url = URL.createObjectURL(new Blob([meta.cover.data], { type: meta.cover.type }));
-    coverUrls.push(url);
-    const img = document.createElement('img');
-    img.src = url;
-    img.alt = '';
+  const img = coverImage(meta);
+  if (img) {
     open.append(img);
   } else {
     open.classList.add('plain');
@@ -125,8 +218,17 @@ const reader = new Reader(readerView, {
   onExplain: (ctx) => ai.open(ctx),
   onError: (err) => toast(err.message),
   onSave: () => flushProgress(),
+  onActivity: noteActivity,
+  // The library shows behind the book while it is being dragged closed.
+  onDismissStart: () => {
+    flushProgress();
+    libraryView.hidden = false;
+    refreshLibrary();
+  },
+  onDismissCancel: () => { libraryView.hidden = true; },
   onProgress: ({ index, frac, progress }) => {
     if (!current) return;
+    noteActivity();
     current.pos = { index, frac };
     current.progress = progress;
     saveTimer ??= setTimeout(flushProgress, 500);
@@ -165,11 +267,45 @@ function showLibrary() {
 
 // ---- Settings --------------------------------------------------------------
 
+// A hand-picked spread of current models, from most capable to cheapest.
+// Anything else on OpenRouter can be entered under "Other…".
+const MODELS = [
+  ['anthropic/claude-fable-5.1', 'Claude Fable 5.1'],
+  ['anthropic/claude-opus-5.5', 'Claude Opus 5.5'],
+  ['anthropic/claude-sonnet-5.5', 'Claude Sonnet 5.5'],
+  ['openai/gpt-6.1-sol', 'GPT-6.1 Sol'],
+  ['x-ai/grok-4.7', 'Grok 4.7'],
+  ['google/gemini-3.8-flash', 'Gemini 3.8 Flash'],
+  ['mistralai/mistral-large-4-0', 'Mistral Large 4'],
+  ['deepseek/deepseek-v4.1-flash', 'DeepSeek V4.1 Flash'],
+  ['anthropic/claude-haiku-5.5', 'Claude Haiku 5.5'],
+  ['openai/gpt-6-luna', 'GPT-6 Luna'],
+];
+
+let prices = new Map();
+function renderModels() {
+  const select = $('#set-model');
+  const selected = settings.model.get();
+  const listed = MODELS.some(([id]) => id === selected) ? MODELS : [...MODELS, [selected, selected]];
+  select.replaceChildren(
+    ...listed.map(([id, name]) => new Option(prices.has(id) ? `${name} · ${prices.get(id)}` : name, id)),
+    new Option('Other…', ''),
+  );
+  select.value = selected;
+  $('#set-model-custom').hidden = true;
+  $('#set-model-custom').value = '';
+}
+
+$('#set-model').addEventListener('change', (e) => {
+  $('#set-model-custom').hidden = e.target.value !== '';
+});
+
 let modelsLoaded = false;
 function openSettings() {
   $('#set-key').value = settings.key.get();
-  $('#set-model').value = settings.model.get();
+  renderModels();
   $('#set-extra').value = settings.extra.get();
+  $('#set-goal').value = goalMinutes();
   settingsDialog.showModal();
   if (modelsLoaded) return;
   modelsLoaded = true;
@@ -177,6 +313,13 @@ function openSettings() {
     .then((res) => res.json())
     .then(({ data }) => {
       $('#model-list').replaceChildren(...data.map((m) => new Option(m.name, m.id)));
+      const dollars = (perToken) => `$${Number((perToken * 1e6).toFixed(2))}`;
+      prices = new Map(data.map((m) => [m.id, `${dollars(m.pricing.prompt)} / ${dollars(m.pricing.completion)}`]));
+      if (settingsDialog.open && $('#set-model-custom').hidden) {
+        const chosen = $('#set-model').value;
+        renderModels();
+        $('#set-model').value = chosen;
+      }
     })
     .catch(() => { modelsLoaded = false; });
 }
@@ -184,8 +327,10 @@ function openSettings() {
 settingsDialog.addEventListener('close', () => {
   if (settingsDialog.returnValue !== 'save') return;
   settings.key.set($('#set-key').value.trim());
-  settings.model.set($('#set-model').value.trim());
+  settings.model.set($('#set-model').value || $('#set-model-custom').value.trim() || settings.model.get());
   settings.extra.set($('#set-extra').value.trim());
+  localStorage.setItem('reader.goal', parseInt($('#set-goal').value, 10) || 10);
+  renderReadingTime();
   ai.retry();
 });
 
@@ -207,6 +352,7 @@ $('#btn-sample').addEventListener('click', async () => {
   }
 });
 
+document.addEventListener('pointerdown', noteActivity);
 document.addEventListener('dragover', (e) => e.preventDefault());
 document.addEventListener('drop', (e) => {
   e.preventDefault();
@@ -235,6 +381,21 @@ if ('serviceWorker' in navigator && !isLocal) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
+// Hooks for the iOS app: books opened from Files, and the Explain/Highlight
+// items it adds to the system text-selection menu.
+window.readerImport = async (url, name) => {
+  if (!readerView.hidden) showLibrary();
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('not found');
+    await importFiles([new File([await res.blob()], name)]);
+  } catch {
+    toast(`Couldn’t add “${name}”.`);
+  }
+};
+window.readerAction = (kind) => reader.nativeAction(kind);
+
 await refreshLibrary();
+window.webkit?.messageHandlers?.reader?.postMessage({ type: 'ready' });
 const last = localStorage.getItem('reader.open');
 if (last && books.some((b) => b.id === last)) openBook(last);

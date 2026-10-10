@@ -1,4 +1,5 @@
-// Draws the app icon and writes icons/icon-180.png and icons/icon-512.png.
+// Draws the app icon: icons/icon-180.png and icon-512.png for the web app,
+// plus the 1024px icon for the iOS app's asset catalog.
 // Run with: node tools/make-icons.mjs
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -86,3 +87,4 @@ mkdirSync(new URL('../icons/', import.meta.url), { recursive: true });
 for (const size of [180, 512]) {
   writeFileSync(new URL(`../icons/icon-${size}.png`, import.meta.url), draw(size));
 }
+writeFileSync(new URL('../ios/Reader/Assets.xcassets/AppIcon.appiconset/icon-1024.png', import.meta.url), draw(1024));

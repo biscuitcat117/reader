@@ -41,6 +41,10 @@ export class Reader {
     this.menu = $('#sel-menu');
     this.explainBtn = $('#explain-btn');
     this.hlBtn = $('#hl-btn');
+    this.noteBtn = $('#note-btn');
+    this.notePanel = $('#note-panel');
+    this.noteQuote = $('#note-quote');
+    this.noteText = $('#note-text');
     this.tocList = $('#toc-list');
     this.hlList = $('#hl-list');
     this.view = { theme: 'white', font: 'original', size: 100 };
@@ -91,6 +95,8 @@ export class Reader {
       hooks.onExplain({ text, before, after, title: this.book.title, author: this.book.author, chapter: this._chapterLabel() });
     });
     this.hlBtn.addEventListener('click', () => this._toggleHighlight());
+    this.noteBtn.addEventListener('click', () => this._openNote());
+    $('#note-done').addEventListener('click', () => this._closeNote());
 
     document.addEventListener('keydown', (e) => this._onKey(e));
     let resizeTimer;
@@ -107,7 +113,12 @@ export class Reader {
     const d = this.idoc = this.frame.contentDocument;
     d.addEventListener('click', (e) => this._onClick(e), true);
     d.addEventListener('touchstart', (e) => this._touchStart(e), { passive: true });
+    d.addEventListener('touchmove', (e) => this._touchMove(e), { passive: true });
     d.addEventListener('touchend', (e) => this._touchEnd(e), { passive: true });
+    d.addEventListener('touchcancel', () => {
+      this.touch = null;
+      if (this.dismissing) this._endDismiss(false);
+    });
     d.addEventListener('keydown', (e) => this._onKey(e));
     d.addEventListener('selectionchange', () => {
       clearTimeout(this.selTimer);
@@ -134,6 +145,7 @@ export class Reader {
   }
 
   close() {
+    this._closeNote();
     this._closePanels();
     this._hideExplain();
     this.book?.destroy();
@@ -209,6 +221,7 @@ p,li,blockquote{orphans:2;widows:2}
 ${this.view.theme === 'white' ? '' : 'body *{color:inherit!important;background-color:transparent!important;border-color:currentColor!important}'}
 body a{color:${theme.link}!important}
 mark[data-hl]{background-color:rgba(255,205,0,${theme.ui === 'dark' ? '.32' : '.45'})!important;color:inherit!important}
+mark[data-note]{border-bottom:2px solid rgba(235,150,0,.95)!important}
 ${font ? `body *:not(pre,code,kbd,samp,pre *){font-family:${font}!important}` : ''}`;
 
     const body = this.idoc.body;
@@ -333,9 +346,53 @@ ${font ? `body *:not(pre,code,kbd,samp,pre *){font-family:${font}!important}` : 
   }
 
   _touchStart(e) {
+    this.hooks.onActivity();
     if (e.touches.length > 1) { this.touch = null; return; }
     const t = e.touches[0];
-    this.touch = { x: t.clientX, y: t.clientY, time: Date.now(), hadSelection: this._hasSelection() };
+    this.touch = {
+      x: t.clientX, y: t.clientY, screenX: t.screenX, screenY: t.screenY,
+      time: Date.now(), hadSelection: this._hasSelection(),
+    };
+  }
+
+  // Dragging down shrinks the book under the finger; letting go far enough
+  // down closes it. Screen coordinates are used because the page itself is
+  // being scaled while the finger moves.
+  _touchMove(e) {
+    const start = this.touch;
+    if (!start || start.horizontal || e.touches.length > 1) return;
+    const t = e.touches[0];
+    const dx = t.screenX - start.screenX;
+    const dy = t.screenY - start.screenY;
+    if (!this.dismissing) {
+      if (start.hadSelection || this._hasSelection() || this.noteHighlight || this.loading) return;
+      if (Math.abs(dx) > 14 && Math.abs(dx) >= Math.abs(dy)) { start.horizontal = true; return; }
+      if (dy < 14 || dy < Math.abs(dx) * 1.5) return;
+      this.dismissing = true;
+      this._closePanels();
+      this._hideExplain();
+      this.root.classList.add('dismissing');
+      this.hooks.onDismissStart();
+    }
+    const pull = Math.max(0, dy);
+    const progress = clamp(pull / (window.innerHeight * 0.6), 0, 1);
+    this.dismissPull = pull;
+    this.root.style.transition = 'none';
+    this.root.style.transform = `translate(${dx * 0.5}px, ${pull * 0.55}px) scale(${1 - progress * 0.35})`;
+  }
+
+  _endDismiss(close) {
+    this.dismissing = false;
+    const root = this.root;
+    root.style.transition = 'transform .25s ease, opacity .25s ease';
+    root.style.transform = close ? `translateY(${window.innerHeight * 0.3}px) scale(.3)` : '';
+    if (close) root.style.opacity = '0';
+    setTimeout(() => {
+      if (close) this.hooks.onClose();
+      else this.hooks.onDismissCancel();
+      root.classList.remove('dismissing');
+      root.style.transition = root.style.transform = root.style.opacity = '';
+    }, 260);
   }
 
   _touchEnd(e) {
@@ -343,6 +400,7 @@ ${font ? `body *:not(pre,code,kbd,samp,pre *){font-family:${font}!important}` : 
     this.touch = null;
     if (!start) return;
     this.lastTouch = Date.now();
+    if (this.dismissing) { this._endDismiss(this.dismissPull > 110); return; }
     const t = e.changedTouches[0];
     const dx = t.clientX - start.x;
     const dy = t.clientY - start.y;
@@ -357,6 +415,7 @@ ${font ? `body *:not(pre,code,kbd,samp,pre *){font-family:${font}!important}` : 
   }
 
   _onClick(e) {
+    this.hooks.onActivity();
     const link = e.target.closest?.('a');
     const href = link?.getAttribute('href') || link?.getAttribute('xlink:href');
     if (link) {
@@ -370,6 +429,7 @@ ${font ? `body *:not(pre,code,kbd,samp,pre *){font-family:${font}!important}` : 
   }
 
   _tap(x, target) {
+    if (this.noteHighlight) { this._closeNote(); return; }
     if (!this.tocPanel.hidden || !this.aaPanel.hidden) { this._closePanels(); return; }
     const mark = target?.closest?.('mark[data-hl]');
     if (mark) { this._openHighlight(mark.dataset.hl); return; }
@@ -424,7 +484,17 @@ ${font ? `body *:not(pre,code,kbd,samp,pre *){font-family:${font}!important}` : 
     this.selection = this._context(start, start + range.toString().length);
     this.activeHighlight = null;
     this.hlBtn.textContent = 'Highlight';
+    this.noteBtn.textContent = 'Note';
     this._placeMenu(rects);
+    if (window.readerNative?.menu) this.menu.hidden = true;
+  }
+
+  // Explain/Highlight chosen from the iOS system selection menu.
+  nativeAction(kind) {
+    if (!this.isOpen) return;
+    this._updateExplain();
+    if (!this.selection) return;
+    ({ explain: this.explainBtn, highlight: this.hlBtn, note: this.noteBtn })[kind]?.click();
   }
 
   // Sits below the text: iPadOS puts its own Copy/Look Up menu above.
@@ -471,6 +541,7 @@ ${font ? `body *:not(pre,code,kbd,samp,pre *){font-family:${font}!important}` : 
         range.setEnd(node, to);
         const mark = this.idoc.createElement('mark');
         mark.dataset.hl = hl.id;
+        if (hl.note) mark.dataset.note = '';
         range.surroundContents(mark);
       }
     }
@@ -484,23 +555,61 @@ ${font ? `body *:not(pre,code,kbd,samp,pre *){font-family:${font}!important}` : 
     this.selection = this._context(hl.start, hl.end);
     this.activeHighlight = id;
     this.hlBtn.textContent = 'Remove Highlight';
+    this.noteBtn.textContent = hl.note ? 'Edit Note' : 'Add Note';
     this._placeMenu(rects);
   }
 
+  _addHighlight(s) {
+    const hl = {
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      index: this.index, start: s.start, end: s.end, text: s.text,
+      chapter: this._chapterLabel(), created: Date.now(),
+    };
+    this.meta.highlights.push(hl);
+    return hl;
+  }
+
+  _highlightsChanged() {
+    this.idoc.getSelection()?.removeAllRanges();
+    this._hideExplain();
+    this._paintHighlights();
+    this._renderHighlights();
+    this.hooks.onSave();
+  }
+
   _toggleHighlight() {
-    const s = this.selection;
-    if (!s) return;
+    if (!this.selection) return;
     if (this.activeHighlight) {
       this.meta.highlights = this.meta.highlights.filter((h) => h.id !== this.activeHighlight);
     } else {
-      this.meta.highlights.push({
-        id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-        index: this.index, start: s.start, end: s.end, text: s.text,
-        chapter: this._chapterLabel(), created: Date.now(),
-      });
+      this._addHighlight(this.selection);
     }
-    this.idoc.getSelection()?.removeAllRanges();
-    this._hideExplain();
+    this._highlightsChanged();
+  }
+
+  // ---- Notes ---------------------------------------------------------------
+
+  // A note belongs to a highlight; adding one to plain selected text
+  // highlights it first.
+  _openNote() {
+    if (!this.selection) return;
+    const hl = this.meta.highlights.find((h) => h.id === this.activeHighlight) || this._addHighlight(this.selection);
+    this._highlightsChanged();
+    this.noteHighlight = hl;
+    this.noteQuote.textContent = hl.text;
+    this.noteText.value = hl.note || '';
+    this.notePanel.hidden = false;
+    this.noteText.focus();
+  }
+
+  _closeNote() {
+    const hl = this.noteHighlight;
+    if (!hl) return;
+    this.noteHighlight = null;
+    this.notePanel.hidden = true;
+    this.noteText.blur();
+    const note = this.noteText.value.trim();
+    if (note) hl.note = note; else delete hl.note;
     this._paintHighlights();
     this._renderHighlights();
     this.hooks.onSave();
@@ -518,7 +627,14 @@ ${font ? `body *:not(pre,code,kbd,samp,pre *){font-family:${font}!important}` : 
       const where = document.createElement('span');
       where.className = 'where';
       where.textContent = hl.chapter;
-      button.append(text, where);
+      button.append(text);
+      if (hl.note) {
+        const note = document.createElement('span');
+        note.className = 'note';
+        note.textContent = hl.note;
+        button.append(note);
+      }
+      button.append(where);
       li.append(button);
       return li;
     }));

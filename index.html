@@ -23,6 +23,22 @@
       <button id="btn-add" class="primary">Add Book</button>
     </div>
   </header>
+  <section id="today">
+    <svg viewBox="0 0 44 44" width="54" height="54" aria-hidden="true">
+      <circle class="track" cx="22" cy="22" r="18"/>
+      <circle class="fill" id="today-ring" cx="22" cy="22" r="18" transform="rotate(-90 22 22)"/>
+    </svg>
+    <div>
+      <div class="label">Today’s Reading</div>
+      <div id="today-time">0 min</div>
+      <div id="today-goal" class="sub"></div>
+    </div>
+  </section>
+  <section id="recent" hidden>
+    <h2>Recently Reading</h2>
+    <div id="recent-row"></div>
+  </section>
+  <h2 id="all-heading" hidden>All Books</h2>
   <div id="book-grid"></div>
   <div id="empty" hidden>
     <h2>No books yet</h2>
@@ -54,7 +70,7 @@
   <aside id="toc-panel" class="panel" hidden>
     <div class="tabs">
       <button data-tab="toc" aria-pressed="true">Contents</button>
-      <button data-tab="hl" aria-pressed="false">Highlights</button>
+      <button data-tab="hl" aria-pressed="false">Highlights &amp; Notes</button>
     </div>
     <ol id="toc-list"></ol>
     <ol id="hl-list" hidden></ol>
@@ -88,7 +104,17 @@
   <div id="sel-menu" hidden>
     <button id="explain-btn">✦ Explain</button>
     <button id="hl-btn">Highlight</button>
+    <button id="note-btn">Note</button>
   </div>
+
+  <aside id="note-panel" hidden>
+    <header>
+      <strong>Note</strong>
+      <button id="note-done">Done</button>
+    </header>
+    <blockquote id="note-quote"></blockquote>
+    <textarea id="note-text" placeholder="Write a note…"></textarea>
+  </aside>
 
   <aside id="ai-panel" hidden>
     <header>
@@ -112,11 +138,16 @@
     </label>
     <p class="hint">Kept only on this device and sent only to OpenRouter. Create one at openrouter.ai/keys.</p>
     <label>Model
-      <input id="set-model" list="model-list" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <select id="set-model"></select>
+      <input id="set-model-custom" list="model-list" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="OpenRouter model ID, e.g. openai/gpt-6-sol" hidden>
     </label>
+    <p class="hint">Prices are US dollars per million tokens, input / output. An explanation uses roughly a thousand tokens.</p>
     <datalist id="model-list"></datalist>
     <label>Extra instructions (optional)
       <textarea id="set-extra" rows="2" placeholder="e.g. Explain simply. Answer in Spanish."></textarea>
+    </label>
+    <label>Daily reading goal (minutes)
+      <input id="set-goal" type="number" min="1" max="600" inputmode="numeric">
     </label>
     <menu>
       <button value="cancel" formnovalidate>Cancel</button>

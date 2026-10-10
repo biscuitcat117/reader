@@ -9,8 +9,19 @@ const stored = (name, fallback = '') => ({
   },
 });
 
+// Inside the iOS app the key lives in the Keychain: the native shell hands it
+// over in window.readerNative and is told when it changes.
+const native = window.readerNative;
+const nativeKey = {
+  get: () => native.key || '',
+  set: (value) => {
+    native.key = value;
+    window.webkit.messageHandlers.reader.postMessage({ type: 'setKey', value });
+  },
+};
+
 export const settings = {
-  key: stored('apiKey'),
+  key: native ? nativeKey : stored('apiKey'),
   model: stored('model', DEFAULT_MODEL),
   extra: stored('extra'),
 };
@@ -118,6 +129,14 @@ export class AIPanel {
     this.messages = [];
 
     el.querySelector('#ai-close').addEventListener('click', () => this.close());
+    // The delay keeps the panel in place while the Send button is being tapped.
+    this.input.addEventListener('focus', () => {
+      clearTimeout(this.typingTimer);
+      el.classList.add('typing');
+    });
+    this.input.addEventListener('blur', () => {
+      this.typingTimer = setTimeout(() => el.classList.remove('typing'), 300);
+    });
     this.form.addEventListener('submit', (e) => {
       e.preventDefault();
       const question = this.input.value.trim();
